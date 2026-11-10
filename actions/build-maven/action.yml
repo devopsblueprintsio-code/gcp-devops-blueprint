@@ -1,0 +1,46 @@
+name: "Java Maven Build Template"
+description: "Packages a Java enterprise application isolating local .m2 dependencies."
+
+inputs:
+  command:
+    description: "Maven compilation command string."
+    required: false
+    default: "mvn -U -Dmaven.repo.local=.m2/repository clean package -DskipTests"
+  java-version:
+    description: "Target Java JDK environment."
+    required: false
+    default: "17"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Java JDK Runtime
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: 'temurin'
+
+    - name: Compute Maven Dependency Cache Key
+      id: cache-key
+      shell: bash
+      run: echo "key=${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Isolated Maven Cache
+      uses: actions/cache/restore@v4
+      id: cache-restore
+      with:
+        path: .m2/repository
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Execute Maven Build Package
+      shell: bash
+      run: ${{ inputs.command }}
+
+    - name: Save Isolated Maven Cache
+      if: steps.cache-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .m2/repository
+        key: ${{ steps.cache-key.outputs.key }}

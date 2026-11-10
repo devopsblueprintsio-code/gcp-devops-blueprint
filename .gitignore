@@ -1,0 +1,21 @@
+# Local Environment Variables files
+*.env
+*.env.local
+
+# ...pero sí versionar los configmaps de ejemplo del blueprint (no son secretos)
+!kustomize/overlays/**/env-configmap.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Output binaries or compiled files
+dist/
+build/
+target/
+.venv/
+.go/
+
+
+# eBook manuscript (producto comercial, no publicar)
+ebook/

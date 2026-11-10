@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+namespace: dev-environment
+configMapGenerator:
+  - name: application-config
+    envs:
+      - env-configmap.env
+    options:
+      disableNameSuffixHash: true
+images:
+  - name: image-placeholder
+    newName: us-central1-docker.pkg.dev/your-project/your-repo/your-app
+    newTag: latest
+patches:
+  - path: resources.yaml

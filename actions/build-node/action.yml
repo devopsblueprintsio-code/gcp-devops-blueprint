@@ -1,0 +1,51 @@
+name: "Node.js Build Template"
+description: "Installs dependencies and builds a Node.js frontend enforcing aggressive npm cache reuse."
+
+inputs:
+  command:
+    description: "Main build command execution string."
+    required: false
+    default: "npm run build"
+  node-version:
+    description: "Target Node.js runtime version."
+    required: false
+    default: "20"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js Runtime Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: false
+
+    - name: Compute npm Dependency Cache Key
+      id: cache-key
+      shell: bash
+      run: echo "key=${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore npm Workspace Cache
+      uses: actions/cache/restore@v4
+      id: cache-restore
+      with:
+        path: ~/.npm
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+    - name: Execute Frontend Build
+      shell: bash
+      run: ${{ inputs.command }}
+
+    - name: Save npm Workspace Cache
+      if: steps.cache-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.npm
+        key: ${{ steps.cache-key.outputs.key }}

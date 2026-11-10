@@ -1,0 +1,96 @@
+name: GKE GitOps Pipeline
+on:
+  push:
+    branches: [ develop, uat, main ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 🧠 Resolving targets dynamically by evaluating the active Git branch metadata
+      - name: Resolve Target Environment Config
+        id: env-resolver
+        shell: bash
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          echo "🔄 Target branch detected: $BRANCH"
+          
+          if [[ "$BRANCH" == "main" ]]; then
+            echo "overlay_dir=production" >> "$GITHUB_OUTPUT"
+            echo "target_namespace=prod-environment" >> "$GITHUB_OUTPUT"
+            echo "gcp_project=your-gcp-project-prod" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-prod@your-gcp-project-prod.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+          elif [[ "$BRANCH" == "uat" ]]; then
+            echo "overlay_dir=uat" >> "$GITHUB_OUTPUT"
+            echo "target_namespace=uat-environment" >> "$GITHUB_OUTPUT"
+            echo "gcp_project=your-gcp-project-uat" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-uat@your-gcp-project-uat.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+          else
+            echo "overlay_dir=development" >> "$GITHUB_OUTPUT"
+            echo "target_namespace=dev-environment" >> "$GITHUB_OUTPUT"
+            echo "gcp_project=your-gcp-project-dev" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-dev@your-gcp-project-dev.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Google Cloud Authentication via WIF
+        uses: google-github-actions/auth@v2
+        id: auth
+        with:
+          workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/YOUR_POOL_ID/providers/YOUR_PROVIDER_ID'
+          service_account: ${{ steps.env-resolver.outputs.sa_email }}
+          token_format: 'access_token'
+
+      - name: Compile Go Application
+        uses: ./actions/build-go
+        with:
+          go-version: '1.24'
+
+      - name: Setup Google Cloud SDK CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin,kubectl'
+
+      # 🐳 The container builder now uses the dynamic repository name extracted from GitHub context
+      - name: Build and Push Container Image
+        uses: ./actions/docker-build
+        with:
+          project-id: ${{ steps.env-resolver.outputs.gcp_project }}
+          repository-name: ${{ github.event.repository.name }}
+          access-token: ${{ steps.auth.outputs.access_token }}
+
+      - name: Connect to GKE Cluster
+        run: |
+          gcloud container clusters get-credentials your-cluster --zone us-central1-a --project ${{ steps.env-resolver.outputs.gcp_project }}
+
+      # 🚀 TRUE GITOPS MUTATION: Completely dynamic and automated environment deployment without hardcoded values
+      - name: Mutate and Deploy via Kustomize
+        run: |
+          # 1. Dynamically navigate to the targeted environment overlay folder
+          cd kustomize/overlays/${{ steps.env-resolver.outputs.overlay_dir }}
+          echo "📥 Mutating manifest inside folder: kustomize/overlays/${{ steps.env-resolver.outputs.overlay_dir }}"
+          
+          # 2. Extract the exact application name from Git context
+          REPO_NAME_ONLY="${{ github.event.repository.name }}"
+          
+          # 3. Define the base common repository name inside Artifact Registry
+          ARTIFACT_REPO="main-apps-repo"
+          
+          # 4. Construct the fully-qualified registry target URL cleanly
+          REGISTRY_URL="us-central1-docker.pkg.dev/${{ steps.env-resolver.outputs.gcp_project }}/$ARTIFACT_REPO/$REPO_NAME_ONLY"
+          
+          # 5. Mutate the base manifest placeholder inserting the immutable short-SHA commit tag
+          kustomize edit set image image-placeholder=$(echo "$REGISTRY_URL:sha-${{ github.sha }}" | tr '[:upper:]' '[:lower:]')
+          
+          # 6. Apply the GitOps overlay manifests to the cluster network
+          kubectl apply -k .
+          
+          # 7. Monitor and track rollout validation state inside the correct namespace
+          kubectl rollout status deployment/microservice-deployment -n ${{ steps.env-resolver.outputs.target_namespace }} --timeout=90s

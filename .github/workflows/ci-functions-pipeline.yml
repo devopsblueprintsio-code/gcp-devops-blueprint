@@ -1,0 +1,62 @@
+name: Cloud Functions Gen2 Pipeline
+on:
+  push:
+    branches: [ develop, uat, main ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Resolve Target Environment Config
+        id: env-resolver
+        shell: bash
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          echo "🔄 Target branch detected: $BRANCH"
+          
+          if [[ "$BRANCH" == "main" ]]; then
+            echo "gcp_project=your-gcp-project-prod" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-prod@your-gcp-project-prod.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "function_name=processor-webhook-prod" >> "$GITHUB_OUTPUT"
+          elif [[ "$BRANCH" == "uat" ]]; then
+            echo "gcp_project=your-gcp-project-uat" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-uat@your-gcp-project-uat.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "function_name=processor-webhook-uat" >> "$GITHUB_OUTPUT"
+          else
+            echo "gcp_project=your-gcp-project-dev" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-dev@your-gcp-project-dev.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "function_name=processor-webhook-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Google Cloud Authentication via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/YOUR_POOL_ID/providers/YOUR_PROVIDER_ID'
+          service_account: ${{ steps.env-resolver.outputs.sa_email }}
+
+      - name: Prepare Python Environment
+        uses: ./actions/build-python
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Native Cloud Function Gen2 Deployment
+        run: |
+          gcloud functions deploy ${{ steps.env-resolver.outputs.function_name }} \
+            --gen2 \
+            --runtime="python311" \
+            --entry-point="handle_event" \
+            --region="us-central1" \
+            --project="${{ steps.env-resolver.outputs.gcp_project }}" \
+            --source="." \
+            --trigger-http \
+            --allow-unauthenticated \
+            --quiet

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microservice-deployment
+spec:
+  selector:
+    matchLabels:
+      app: microservice-pod
+  template:
+    metadata:
+      labels:
+        app: microservice-pod
+    spec:
+      containers:
+        - name: application-container
+          image: image-placeholder
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP

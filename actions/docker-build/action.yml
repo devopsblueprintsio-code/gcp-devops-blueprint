@@ -1,0 +1,40 @@
+name: "Artifact Registry Docker Packager"
+description: "Authenticates, normalizes branch tags, compiles and pushes images to GCP Artifact Registry natively."
+
+inputs:
+  registry-region:
+    description: "GCP region hosting Artifact Registry (e.g., us-central1)."
+    required: false
+    default: "us-central1"
+  repository-name:
+    description: "The targeted destination Artifact Registry repository name."
+    required: true
+  project-id:
+    description: "Google Cloud Project ID."
+    required: true
+  access-token:
+    description: "Short-lived OAuth access token supplied by WIF authentication."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: OAuth2 Registry Authentication
+      shell: bash
+      run: |
+        echo "${{ inputs.access-token }}" | docker login -u oauth2accesstoken --password-stdin https://${{ inputs.registry-region }}-docker.pkg.dev
+
+    - name: Compile and Transmit Multi-Tag Container Images
+      shell: bash
+      run: |
+        set -euo pipefail
+        SHORT_SHA="$(echo "$GITHUB_SHA" | cut -c 1-7)"
+        CLEAN_REF="$(echo "${{ github.ref_name }}" | tr '/' '-')"
+        TAG_NAME="${SHORT_SHA}-${CLEAN_REF}"
+
+        REGISTRY_HOST="${{ inputs.registry-region }}-docker.pkg.dev"
+        IMAGE_BASE="$REGISTRY_HOST/${{ inputs.project-id }}/${{ inputs.repository-name }}/$(basename ${{ github.repository }})"
+
+        docker build -t "$IMAGE_BASE:$TAG_NAME" -t "$IMAGE_BASE:sha-$SHORT_SHA" .
+        docker push "$IMAGE_BASE:$TAG_NAME"
+        docker push "$IMAGE_BASE:sha-$SHORT_SHA"

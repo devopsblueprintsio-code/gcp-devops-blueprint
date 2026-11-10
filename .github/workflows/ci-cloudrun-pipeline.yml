@@ -1,0 +1,72 @@
+name: Cloud Run Enterprise Pipeline
+on:
+  push:
+    branches: [ develop, uat, main ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-serverless:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 🧠 Resolving serverless targets dynamically using GitHub context to eliminate hardcoded service names
+      - name: Resolve Target Environment Config
+        id: env-resolver
+        shell: bash
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          echo "🔄 Target branch detected: $BRANCH"
+          echo "📦 Application context name: $REPO_NAME"
+          
+          if [[ "$BRANCH" == "main" ]]; then
+            echo "gcp_project=your-gcp-project-prod" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-prod@your-gcp-project-prod.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "service_name=${REPO_NAME}-prod" >> "$GITHUB_OUTPUT"
+          elif [[ "$BRANCH" == "uat" ]]; then
+            echo "gcp_project=your-gcp-project-uat" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-uat@your-gcp-project-uat.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "service_name=${REPO_NAME}-uat" >> "$GITHUB_OUTPUT"
+          else
+            echo "gcp_project=your-gcp-project-dev" >> "$GITHUB_OUTPUT"
+            echo "sa_email=github-deploy-dev@your-gcp-project-dev.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "service_name=${REPO_NAME}-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Google Cloud Authentication via WIF
+        uses: google-github-actions/auth@v2
+        id: auth
+        with:
+          workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/YOUR_POOL_ID/providers/YOUR_PROVIDER_ID'
+          service_account: ${{ steps.env-resolver.outputs.sa_email }}
+          token_format: 'access_token'
+
+      - name: Compile Go Application
+        uses: ./actions/build-go
+        with:
+          go-version: '1.24'
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # 🐳 The container builder uses the dynamic repository name extracted from GitHub context
+      - name: Build and Push Container Image
+        uses: ./actions/docker-build
+        with:
+          project-id: ${{ steps.env-resolver.outputs.gcp_project }}
+          repository-name: ${{ github.event.repository.name }}
+          access-token: ${{ steps.auth.outputs.access_token }}
+
+      # 🚀 SERVERLESS DEPLOYMENT: Invoking our modular local dynamic deployer action cleanly with zero hardcoded parameters
+      - name: Deploy Workload to Cloud Run
+        uses: ./actions/deploy-cloudrun
+        with:
+          project-id: ${{ steps.env-resolver.outputs.gcp_project }}
+          service-name: ${{ steps.env-resolver.outputs.service_name }}
+          repository-name: ${{ github.event.repository.name }}
