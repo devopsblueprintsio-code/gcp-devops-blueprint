@@ -82,7 +82,7 @@ The repository gives you the structural skeleton. The complete guide walks you t
 3. **FinOps hacks:** run the Actions Runner Controller (ARC) inside GKE to run pipelines for free.
 4. **Deep-dive troubleshooting** for every architecture.
 
-### 📖 Get the Complete eBook & Video System on Hotmart:
+### 📖 Get the Complete eBook on Hotmart:
 👉 **[CLICK HERE TO ACCESS THE COMPLETE ENTERPRISE GUIDE](#REPLACE_WITH_YOUR_HOTMART_LINK)**
 
 ---
