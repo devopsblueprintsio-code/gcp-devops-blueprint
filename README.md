@@ -83,7 +83,7 @@ The repository gives you the structural skeleton. The complete guide walks you t
 4. **Deep-dive troubleshooting** for every architecture.
 
 ### 📖 Get the Complete eBook on Hotmart:
-👉 **[CLICK HERE TO ACCESS THE COMPLETE ENTERPRISE GUIDE](#REPLACE_WITH_YOUR_HOTMART_LINK)**
+👉 **[CLICK HERE TO ACCESS THE COMPLETE ENTERPRISE GUIDE (eBook ES + EN)](https://go.hotmart.com/D108428923Y)**
 
 ---
 
